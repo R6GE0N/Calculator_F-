@@ -225,13 +225,13 @@ let main _ =
                     printfn "Неверный формат присваивания. Используйте: x = выражение"
                 loop ()
             elif command.StartsWith("diff") then
-                // Символьная производная: diff <expr> wrt <var>
+                // Символьная производная: diff <expr> d <var>
                 let pattern = "diff "
-                let wrt = " wrt "
-                let idx = command.IndexOf(wrt, pattern.Length)
+                let d = " d "
+                let idx = command.IndexOf(d, pattern.Length)
                 if idx > 0 then
                     let exprStr = command.Substring(pattern.Length, idx - pattern.Length)
-                    let varName = command.Substring(idx + wrt.Length).Trim()
+                    let varName = command.Substring(idx + d.Length).Trim()
                     try
                         let exprParsed = parseExpr exprStr
                         let diffExpr = differentiate exprParsed varName
@@ -239,7 +239,7 @@ let main _ =
                     with ex ->
                         printfn "Ошибка при дифференцировании: %s" ex.Message
                 else
-                    printfn "Неверный формат команды diff. Используйте: diff <expr> wrt <var>"
+                    printfn "Неверный формат команды diff. Используйте: diff <expr> d <var>"
                 loop ()
             else
                 // Просто вычислить выражение (без присвоения)
@@ -251,6 +251,6 @@ let main _ =
                     printfn "Ошибка: %s" ex.Message
                 loop ()
 
-    printfn "Функциональный калькулятор на F#.\nКоманды:\n 1) +  -  *  /       (Сложение, Вычитание, Умножение, Деление)\n 2) x = 3.14        (присвоить переменной x)\n 3) diff x^2 wrt x  (символьная производная)\n 4) sin(x), cos(x)  (триг.функции)\n 5) exit            (выход)\n"
+    printfn "Функциональный калькулятор на F#.\nКоманды:\n 1) +  -  *  /       (Сложение, Вычитание, Умножение, Деление)\n 2) x = 3.14        (присвоить переменной x)\n 3) diff x^2 d x  (символьная производная)\n 4) sin(x), cos(x)  (триг.функции)\n 5) exit            (выход)\n"
     loop ()
     0
