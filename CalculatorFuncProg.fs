@@ -14,6 +14,8 @@ type Expr =
     | Pow of Expr * Expr      // Возведение в степень
     | Exp of Expr             // Экспонента
     | Ln of Expr              // Натуральный логарифм
+    | Tan of Expr             // Тангенс
+    | Cot of Expr             // Котангенс
 
 /// Функция для вычисления значения выражения
 let rec evaluate (expr: Expr) (vars: IDictionary<string, float>) : float =
@@ -26,6 +28,8 @@ let rec evaluate (expr: Expr) (vars: IDictionary<string, float>) : float =
     | Div (a, b) -> evaluate a vars / evaluate b vars
     | Sin e -> Math.Sin(evaluate e vars)
     | Cos e -> Math.Cos(evaluate e vars)
+    | Tan e -> Math.Tan(evaluate e vars)
+    | Cot e -> 1.0 / Math.Tan(evaluate e vars) 
     | Pow (a, b) -> Math.Pow(evaluate a vars, evaluate b vars)
     | Exp e -> Math.Exp(evaluate e vars)
     | Ln e -> Math.Log(evaluate e vars)
@@ -41,6 +45,8 @@ let rec differentiate (expr: Expr) (varName: string) : Expr =
     | Div (a, b) -> Div(Sub(Mul(differentiate a varName, b), Mul(a, differentiate b varName)), Mul(b, b))
     | Sin e -> Mul(Cos e, differentiate e varName)
     | Cos e -> Mul(Const -1.0, Mul(Sin e, differentiate e varName))
+    | Tan e -> Mul(Add(Const 1.0, Pow(Tan e, Const 2.0)), differentiate e varName)
+    | Cot e -> Mul(Const -1.0, Mul(Add(Const 1.0, Pow(Cot e, Const 2.0)), differentiate e varName))
     | Pow (u, v) ->
         Mul(
             Pow(u, v),
@@ -63,6 +69,8 @@ let rec exprToString (expr: Expr) : string =
     | Div (a, b) -> sprintf "(%s / %s)" (exprToString a) (exprToString b)
     | Sin e -> sprintf "sin(%s)" (exprToString e)
     | Cos e -> sprintf "cos(%s)" (exprToString e)
+    | Tan e -> sprintf "tan(%s)" (exprToString e)
+    | Cot e -> sprintf "cot(%s)" (exprToString e)
     | Pow (a, b) -> sprintf "(%s ^ %s)" (exprToString a) (exprToString b)
     | Exp e -> sprintf "exp(%s)" (exprToString e)
     | Ln e -> sprintf "ln(%s)" (exprToString e)
@@ -82,6 +90,8 @@ let consumeTokens (chars: string list) : string list =
         | "s" :: "i" :: "n" :: "(" :: rest -> loop ("sin(" :: acc) rest
         | "c" :: "o" :: "s" :: "(" :: rest -> loop ("cos(" :: acc) rest
         | "e" :: "x" :: "p" :: "(" :: rest -> loop ("exp(" :: acc) rest
+        | "t" :: "a" :: "n" :: "(" :: rest -> loop ("tan(" :: acc) rest
+        | "c" :: "o" :: "t" :: "(" :: rest -> loop ("cot(" :: acc) rest
         | "l" :: "n" :: "(" :: rest -> loop ("ln(" :: acc) rest
         | x :: rest ->
             // Исправление: явная проверка типа и преобразование
@@ -124,6 +134,14 @@ let parseExpr (input: string) =
                 let inside = tok.Substring(4)
                 let expr, t = parse (("(" + inside) :: tail)
                 Cos expr, t
+            | tok :: tail when tok.StartsWith("tan(") ->
+                let inside = tok.Substring(4)
+                let expr, t = parse (("(" + inside) :: tail)
+                Tan expr, t
+            | tok :: tail when tok.StartsWith("cot(") ->
+                let inside = tok.Substring(4)
+                let expr, t = parse (("(" + inside) :: tail)
+                Cot expr, t
             | tok :: tail when tok.StartsWith("exp(") ->
                 let inside = tok.Substring(4)
                 let expr, t = parse (("(" + inside) :: tail)
@@ -172,21 +190,22 @@ let parseExpr (input: string) =
 [<EntryPoint>]
 let main _ =
     let vars = Dictionary<string, float>()
-    // Новое подробное описание возможностей
+    //  описание возможностей
     printfn "
 ╔══════════════════════════════════════════════════╗
 ║          Функциональный калькулятор 2.0          ║
 ╠══════════════════════════════════════════════════╣
 ║ Поддерживаемые операции:                         ║
 ║  • Арифметика: +, -, *, /, ^ (степень)           ║
-║  • Функции: sin(), cos(), exp(), ln()            ║
+║  • Функции: sin(), cos(), exp(), ln(),           ║
+║             tan(), cot()                         ║
 ║  • Переменные: x = 5, y = 2^3 + sin(1)           ║
-║  • Дифференцирование: diff <выражение> d <var> ║
+║  • Дифференцирование: diff <выражение> d <var>   ║
 ╠══════════════════════════════════════════════════╣
 ║ Примеры команд:                                  ║
 ║  > 2 + 3 * 5                                     ║
 ║  > x = 3.14                                      ║
-║  > diff x^2 + sin(x) d x                       ║
+║  > diff x^2 + sin(x) d x                         ║
 ║  > exp(2) + ln(e^3)                              ║
 ║  > exit                                          ║
 ╚══════════════════════════════════════════════════╝"
