@@ -11,246 +11,207 @@ type Expr =
     | Div of Expr * Expr      // Деление
     | Sin of Expr             // sin(...)
     | Cos of Expr             // cos(...)
+    | Pow of Expr * Expr      // Возведение в степень
+    | Exp of Expr             // Экспонента
+    | Ln of Expr              // Натуральный логарифм
 
-/// Функция для вычисления значения выражения, используя значения переменных из словаря vars
+/// Функция для вычисления значения выражения
 let rec evaluate (expr: Expr) (vars: IDictionary<string, float>) : float =
     match expr with
-    | Var x ->
-        if vars.ContainsKey(x) then vars.[x]
-        else 
-            failwithf "Переменная '%s' не определена" x
+    | Var x -> vars.[x]
     | Const c -> c
-    | Add (a, b) -> (evaluate a vars) + (evaluate b vars)
-    | Sub (a, b) -> (evaluate a vars) - (evaluate b vars)
-    | Mul (a, b) -> (evaluate a vars) * (evaluate b vars)
-    | Div (a, b) -> (evaluate a vars) / (evaluate b vars)
-    | Sin e      -> Math.Sin(evaluate e vars)
-    | Cos e      -> Math.Cos(evaluate e vars)
+    | Add (a, b) -> evaluate a vars + evaluate b vars
+    | Sub (a, b) -> evaluate a vars - evaluate b vars
+    | Mul (a, b) -> evaluate a vars * evaluate b vars
+    | Div (a, b) -> evaluate a vars / evaluate b vars
+    | Sin e -> Math.Sin(evaluate e vars)
+    | Cos e -> Math.Cos(evaluate e vars)
+    | Pow (a, b) -> Math.Pow(evaluate a vars, evaluate b vars)
+    | Exp e -> Math.Exp(evaluate e vars)
+    | Ln e -> Math.Log(evaluate e vars)
 
-/// Символьное дифференцирование выражения expr по переменной varName
+/// Символьное дифференцирование
 let rec differentiate (expr: Expr) (varName: string) : Expr =
     match expr with
     | Const _ -> Const 0.0
-    | Var x ->
-        if x = varName then Const 1.0
-        else Const 0.0
-    | Add (a, b) ->
-        Add(differentiate a varName, differentiate b varName)
-    | Sub (a, b) ->
-        Sub(differentiate a varName, differentiate b varName)
-    | Mul (a, b) ->
-        // (f*g)' = f'*g + f*g'
-        Add(Mul(differentiate a varName, b), Mul(a, differentiate b varName))
-    | Div (a, b) ->
-        // (f/g)' = (f'*g - f*g') / g^2
-        Div( Sub(Mul(differentiate a varName, b),
-                 Mul(a, differentiate b varName)),
-             Mul(b, b))
-    | Sin e ->
-        // (sin e)' = cos e * e'
-        Mul(Cos e, differentiate e varName)
-    | Cos e ->
-        // (cos e)' = -sin e * e'
-        Mul(Const -1.0, Mul(Sin e, differentiate e varName))
+    | Var x -> if x = varName then Const 1.0 else Const 0.0
+    | Add (a, b) -> Add(differentiate a varName, differentiate b varName)
+    | Sub (a, b) -> Sub(differentiate a varName, differentiate b varName)
+    | Mul (a, b) -> Add(Mul(differentiate a varName, b), Mul(a, differentiate b varName))
+    | Div (a, b) -> Div(Sub(Mul(differentiate a varName, b), Mul(a, differentiate b varName)), Mul(b, b))
+    | Sin e -> Mul(Cos e, differentiate e varName)
+    | Cos e -> Mul(Const -1.0, Mul(Sin e, differentiate e varName))
+    | Pow (u, v) ->
+        Mul(
+            Pow(u, v),
+            Add(
+                Mul(differentiate v varName, Ln u),
+                Div(Mul(v, differentiate u varName), u)
+            )
+        )
+    | Exp u -> Mul(Exp u, differentiate u varName)
+    | Ln u -> Div(differentiate u varName, u)
 
-/// Функция для "печати" символьного выражения в строку
+/// Преобразование выражения в строку
 let rec exprToString (expr: Expr) : string =
     match expr with
-    | Var x       -> x
-    | Const c     -> 
-        // Для красоты отсекаем .0, если число целое
-        let intPart = int c
-        if float intPart = c then string intPart
-        else string c
-    | Add (a, b)  -> sprintf "(%s + %s)" (exprToString a) (exprToString b)
-    | Sub (a, b)  -> sprintf "(%s - %s)" (exprToString a) (exprToString b)
-    | Mul (a, b)  -> sprintf "(%s * %s)" (exprToString a) (exprToString b)
-    | Div (a, b)  -> sprintf "(%s / %s)" (exprToString a) (exprToString b)
-    | Sin e       -> sprintf "sin(%s)" (exprToString e)
-    | Cos e       -> sprintf "cos(%s)" (exprToString e)
+    | Var x -> x
+    | Const c -> if float (int c) = c then string (int c) else string c
+    | Add (a, b) -> sprintf "(%s + %s)" (exprToString a) (exprToString b)
+    | Sub (a, b) -> sprintf "(%s - %s)" (exprToString a) (exprToString b)
+    | Mul (a, b) -> sprintf "(%s * %s)" (exprToString a) (exprToString b)
+    | Div (a, b) -> sprintf "(%s / %s)" (exprToString a) (exprToString b)
+    | Sin e -> sprintf "sin(%s)" (exprToString e)
+    | Cos e -> sprintf "cos(%s)" (exprToString e)
+    | Pow (a, b) -> sprintf "(%s ^ %s)" (exprToString a) (exprToString b)
+    | Exp e -> sprintf "exp(%s)" (exprToString e)
+    | Ln e -> sprintf "ln(%s)" (exprToString e)
 
-
-/// Примитивная лексер-функция, разбирающая строку на токены
-/// (числа, скобки, операторы, "sin(", "cos(" и т.д.)
+/// Лексер
 let consumeTokens (chars: string list) : string list =
     let rec loop (acc: string list) (items: string list) =
         match items with
-        | [] -> 
-            // Когда входных символов больше нет, 
-            // переворачиваем собранные токены 
-            List.rev acc
-
-        // Скобки
+        | [] -> List.rev acc
         | "(" :: rest -> loop ("(" :: acc) rest
         | ")" :: rest -> loop (")" :: acc) rest
-
-        // Арифметические операторы
         | "+" :: rest -> loop ("+" :: acc) rest
         | "-" :: rest -> loop ("-" :: acc) rest
         | "*" :: rest -> loop ("*" :: acc) rest
         | "/" :: rest -> loop ("/" :: acc) rest
-
-        // sin( и cos(
+        | "^" :: rest -> loop ("^" :: acc) rest
         | "s" :: "i" :: "n" :: "(" :: rest -> loop ("sin(" :: acc) rest
         | "c" :: "o" :: "s" :: "(" :: rest -> loop ("cos(" :: acc) rest
-
-        // Любой другой символ (цифра/буква/точка)
-        | (x: string) :: rest ->
-            // Если x — потенциально часть числа (цифра или точка)
+        | "e" :: "x" :: "p" :: "(" :: rest -> loop ("exp(" :: acc) rest
+        | "l" :: "n" :: "(" :: rest -> loop ("ln(" :: acc) rest
+        | x :: rest ->
+            // Исправление: явная проверка типа и преобразование
             if x.Length > 0 && (Char.IsDigit(x.[0]) || x = ".") then
-                // Собираем целое/вещественное число (например "3.14")
-                let rec gatherNumber soFar lst =
+                let rec gatherNumber num (lst: string list) =
                     match lst with
-                    | (d: string) :: tail when d.Length > 0 && (Char.IsDigit(d.[0]) || d = ".") ->
-                        gatherNumber (soFar + d) tail
-                    | other -> soFar, other
-
+                    | d :: tail when (d.Length > 0 && (Char.IsDigit(d.[0]) || d = ".")) ->
+                        gatherNumber (num + d) tail
+                    | _ -> num, lst
                 let number, remain = gatherNumber x rest
                 loop (number :: acc) remain
             else
-                // Иначе считаем x самостоятельным токеном (например, имя переменной 'x')
                 loop (x :: acc) rest
-
     loop [] chars
 
-/// Главная функция парсинга: принимает строку, разбивает на токены и строит Expr
-let parseExpr (input: string) : Expr =
-
-    // 1) разбиваем на список символов (убирая пробелы)
-    let chars =
-        input
-        |> Seq.filter (fun c -> not (Char.IsWhiteSpace c))
-        |> Seq.map string
+/// Парсер
+let parseExpr (input: string) =
+    let chars = 
+        input 
+        |> Seq.filter (fun c -> not (Char.IsWhiteSpace c)) 
+        |> Seq.map string 
         |> Seq.toList
 
-    // 2) превращаем список символов в список токенов
     let tokens = consumeTokens chars
 
-    // 3) Разбираем токены в дерево Expr
-    let rec parse (ts: string list) : (Expr * string list) =
-
-        let rec parseFactor (rest: string list) : (Expr * string list) =
+    let rec parse ts =
+        let rec parseFactor rest =
             match rest with
-            | [] -> failwith "Неожиданный конец выражения в parseFactor"
-
-            // Скобки ( ... )
+            | [] -> failwith "Неожиданный конец выражения"
             | "(" :: tail ->
-                let exprInside, tailAfter = parse tail
+                let expr, tailAfter = parse tail
                 match tailAfter with
-                | ")" :: tailAfterParen -> exprInside, tailAfterParen
-                | _ -> failwith "Отсутствует закрывающая скобка"
-
-            // sin(...) / cos(...)
+                | ")" :: t -> expr, t
+                | _ -> failwith "Не закрыта скобка"
             | tok :: tail when tok.StartsWith("sin(") ->
-                // Пример токена: "sin("
-                // После него мы ждём выражение, заканчивающееся на ")"
-                let inside = tok.Substring(4, tok.Length - 4) // убираем "sin("
-                // Чтобы не усложнять парсер, мы притворимся, что дальше стоит "(" + inside,
-                // и потом дойдём до закрывающей скобки.
-                let exprInside, tailAfter = parse (("("+inside) :: tail)
-                Sin exprInside, tailAfter
-
+                let inside = tok.Substring(4)
+                let expr, t = parse (("(" + inside) :: tail)
+                Sin expr, t
             | tok :: tail when tok.StartsWith("cos(") ->
-                let inside = tok.Substring(4, tok.Length - 4) // убираем "cos("
-                let exprInside, tailAfter = parse (("("+inside) :: tail)
-                Cos exprInside, tailAfter
-
-            // Числа / переменные
+                let inside = tok.Substring(4)
+                let expr, t = parse (("(" + inside) :: tail)
+                Cos expr, t
+            | tok :: tail when tok.StartsWith("exp(") ->
+                let inside = tok.Substring(4)
+                let expr, t = parse (("(" + inside) :: tail)
+                Exp expr, t
+            | tok :: tail when tok.StartsWith("ln(") ->
+                let inside = tok.Substring(3)
+                let expr, t = parse (("(" + inside) :: tail)
+                Ln expr, t
             | tok :: tail ->
-                match System.Double.TryParse(tok) with
-                | (true, num) -> Const num, tail
+                match Double.TryParse(tok) with
+                | true, num -> Const num, tail
                 | _ -> Var tok, tail
 
-        // parseTerm: обрабатывает операции * и /
-        let rec parseTerm (leftExpr: Expr) (rest: string list) : (Expr * string list) =
+        let rec parseTerm left rest =
             match rest with
             | "*" :: tail ->
-                let rightExpr, tail2 = parseFactor tail
-                parseTerm (Mul(leftExpr, rightExpr)) tail2
+                let right, t = parseFactor tail
+                parseTerm (Mul(left, right)) t
             | "/" :: tail ->
-                let rightExpr, tail2 = parseFactor tail
-                parseTerm (Div(leftExpr, rightExpr)) tail2
-            | _ -> leftExpr, rest
+                let right, t = parseFactor tail
+                parseTerm (Div(left, right)) t
+            | "^" :: tail ->
+                let right, t = parseFactor tail
+                parseTerm (Pow(left, right)) t
+            | _ -> left, rest
 
-        // parseExprInner: обрабатывает операции + и -
-        let rec parseExprInner (leftExpr: Expr) (rest: string list) : (Expr * string list) =
+        let rec parseExprInner left rest =
             match rest with
             | "+" :: tail ->
-                let rightExpr, tail2 = parseFactor tail
-                parseExprInner (Add(leftExpr, rightExpr)) tail2
+                let right, t = parseFactor tail
+                parseExprInner (Add(left, right)) t
             | "-" :: tail ->
-                let rightExpr, tail2 = parseFactor tail
-                parseExprInner (Sub(leftExpr, rightExpr)) tail2
-            | _ -> leftExpr, rest
+                let right, t = parseFactor tail
+                parseExprInner (Sub(left, right)) t
+            | _ -> left, rest
 
-        // Сначала получаем factor, затем обрабатываем * /, затем + -
-        let f, r = parseFactor ts
-        let t, r2 = parseTerm f r
-        parseExprInner t r2
+        let factor, r = parseFactor ts
+        let term, r2 = parseTerm factor r
+        parseExprInner term r2
 
-    let parsedExpr, leftover = parse tokens
-    if leftover.Length > 0 then
-        failwithf "Не удалось разобрать выражение до конца. Остались лишние токены: %A" leftover
-
-    parsedExpr
-
+    let expr, leftover = parse tokens
+    if not (List.isEmpty leftover) then
+        failwithf "Остались неразобранные токены: %A" leftover
+    expr
 
 [<EntryPoint>]
 let main _ =
-    // Словарь для хранения значений переменных
     let vars = Dictionary<string, float>()
+    // Новое подробное описание возможностей
+    printfn "
+╔══════════════════════════════════════════════════╗
+║          Функциональный калькулятор 2.0          ║
+╠══════════════════════════════════════════════════╣
+║ Поддерживаемые операции:                         ║
+║  • Арифметика: +, -, *, /, ^ (степень)           ║
+║  • Функции: sin(), cos(), exp(), ln()            ║
+║  • Переменные: x = 5, y = 2^3 + sin(1)           ║
+║  • Дифференцирование: diff <выражение> d <var> ║
+╠══════════════════════════════════════════════════╣
+║ Примеры команд:                                  ║
+║  > 2 + 3 * 5                                     ║
+║  > x = 3.14                                      ║
+║  > diff x^2 + sin(x) d x                       ║
+║  > exp(2) + ln(e^3)                              ║
+║  > exit                                          ║
+╚══════════════════════════════════════════════════╝"
 
-    let rec loop () =
+    let rec loop() =
         Console.Write("> ")
-        let input = Console.ReadLine()
-        match input with
-        | null -> () // EOF (Ctrl+D/Ctrl+Z) — выходим
-        | command -> 
-            if command.StartsWith("exit") then
-                ()
-            elif command.Contains("=") then
-                // Присвоение переменной: x = 3.14
-                let parts = command.Split('=')
-                if parts.Length = 2 then
+        match Console.ReadLine() with
+        | null | "exit" -> 0
+        | input ->
+            try
+                if input.Contains("=") then
+                    let parts = input.Split('=')
                     let varName = parts.[0].Trim()
-                    let exprStr = parts.[1].Trim()
-                    try
-                        let exprParsed = parseExpr exprStr
-                        let value = evaluate exprParsed vars
-                        vars.[varName] <- value
-                        printfn "Переменной '%s' присвоено значение %f" varName value
-                    with ex ->
-                        printfn "Ошибка: %s" ex.Message
+                    let expr = parseExpr (parts.[1].Trim())
+                    vars.[varName] <- evaluate expr vars
+                    printfn "Успешно: %s = %f" varName vars.[varName]
+                elif input.StartsWith("diff") then
+                    let parts = input.Split([|"d"|], StringSplitOptions.RemoveEmptyEntries)
+                    let expr = parseExpr (parts.[0].Substring(4).Trim())
+                    let var = parts.[1].Trim()
+                    let derivative = differentiate expr var
+                    printfn "Производная: %s" (exprToString derivative)
                 else
-                    printfn "Неверный формат присваивания. Используйте: x = выражение"
-                loop ()
-            elif command.StartsWith("diff") then
-                // Символьная производная: diff <expr> d <var>
-                let pattern = "diff "
-                let d = " d "
-                let idx = command.IndexOf(d, pattern.Length)
-                if idx > 0 then
-                    let exprStr = command.Substring(pattern.Length, idx - pattern.Length)
-                    let varName = command.Substring(idx + d.Length).Trim()
-                    try
-                        let exprParsed = parseExpr exprStr
-                        let diffExpr = differentiate exprParsed varName
-                        printfn "d/d%s %s = %s" varName (exprToString exprParsed) (exprToString diffExpr)
-                    with ex ->
-                        printfn "Ошибка при дифференцировании: %s" ex.Message
-                else
-                    printfn "Неверный формат команды diff. Используйте: diff <expr> d <var>"
-                loop ()
-            else
-                // Просто вычислить выражение (без присвоения)
-                try
-                    let exprParsed = parseExpr command
-                    let value = evaluate exprParsed vars
-                    printfn "%s = %f" (exprToString exprParsed) value
-                with ex ->
-                    printfn "Ошибка: %s" ex.Message
-                loop ()
-
-    printfn "Функциональный калькулятор на F#.\nКоманды:\n 1) +  -  *  /       (Сложение, Вычитание, Умножение, Деление)\n 2) x = 3.14        (присвоить переменной x)\n 3) diff x^2 d x  (символьная производная)\n 4) sin(x), cos(x)  (триг.функции)\n 5) exit            (выход)\n"
-    loop ()
-    0
+                    let expr = parseExpr input
+                    printfn "Результат: %f" (evaluate expr vars)
+            with ex -> printfn "Ошибка: %s" ex.Message
+            loop()
+    loop()
