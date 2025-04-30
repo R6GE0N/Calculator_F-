@@ -94,7 +94,7 @@ let consumeTokens (chars: string list) : string list =
         | "c" :: "o" :: "t" :: "(" :: rest -> loop ("cot(" :: acc) rest
         | "l" :: "n" :: "(" :: rest -> loop ("ln(" :: acc) rest
         | x :: rest ->
-            // Исправление: явная проверка типа и преобразование
+           
             if x.Length > 0 && (Char.IsDigit(x.[0]) || x = ".") then
                 let rec gatherNumber num (lst: string list) =
                     match lst with
