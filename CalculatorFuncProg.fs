@@ -90,6 +90,7 @@ let rec differentiate (expr: Expr) (varName: string) : Expr =
 let rec exprToString (expr: Expr) : string =
     match expr with
     | Var x -> x
+    | Const c when c = Math.PI -> "pi" 
     | Const c -> if float (int c) = c then string (int c) else string c
     | Add (a, b) -> sprintf "(%s + %s)" (exprToString a) (exprToString b)
     | Sub (a, b) -> sprintf "(%s - %s)" (exprToString a) (exprToString b)
@@ -119,6 +120,7 @@ let consumeTokens (chars: string list) : string list =
         | "*" :: rest -> loop ("*" :: acc) rest
         | "/" :: rest -> loop ("/" :: acc) rest
         | "^" :: rest -> loop ("^" :: acc) rest
+        | "p" :: "i" :: rest -> loop ("pi" :: acc) rest 
         | "s" :: "i" :: "n" :: "(" :: rest -> loop ("sin(" :: acc) rest
         | "c" :: "o" :: "s" :: "(" :: rest -> loop ("cos(" :: acc) rest
         | "t" :: "a" :: "n" :: "(" :: rest -> loop ("tan(" :: acc) rest
@@ -187,13 +189,13 @@ let parseExpr (input: string) =
                 let expr, t = parse (("(" + inside) :: tail)
                 Ln expr, t
             | tok :: tail when tok.StartsWith("log(") ->
-                let inside = tok.Substring(4)
-                let baseExpr, tailAfterBase = parse (inside :: tail)
-                match tailAfterBase with
-                | "," :: t ->
-                    let argExpr, tAfterArg = parse t
-                    match tAfterArg with
-                    | ")" :: tRemain -> LogBase(baseExpr, argExpr), tRemain
+                let rest = tail
+                let baseExpr, restAfterBase = parseFactor rest
+                match restAfterBase with
+                | "," :: restAfterComma ->
+                    let argExpr, restAfterArg = parseFactor restAfterComma
+                    match restAfterArg with
+                    | ")" :: remaining -> LogBase(baseExpr, argExpr), remaining
                     | _ -> failwith "Не закрыта скобка в log"
                 | _ -> failwith "Ожидается запятая в log(base, arg)"
             | tok :: tail when tok.StartsWith("lg(") ->
@@ -212,6 +214,9 @@ let parseExpr (input: string) =
                 let inside = tok.Substring(7)
                 let expr, t = parse (("(" + inside) :: tail)
                 ArcTan expr, t
+            | "pi" :: tail -> Const Math.PI, tail
+            | tok :: tail when tok = "pi" -> Const Math.PI, tail
+
             | tok :: tail ->
                 match Double.TryParse(tok) with
                 | true, num -> Const num, tail
@@ -259,9 +264,9 @@ let main _ =
 ║ Поддерживаемые операции:                         ║
 ║  • Арифметика: +, -, *, /, ^ (степень)           ║
 ║  • Функции: sin(), cos(), exp(), ln(),           ║
-║             tan(), cot(), log(), lg(),           �
+║             tan(), cot(), log(), lg(),           ║
 ║             arcsin(), arccos(), arctan()         ║
-║  • Переменные: x = 5, y = 2^3 + sin(1)           ║
+║  • Переменные: x = 5, y = 2^3 + sin(1), pi       ║
 ║  • Дифференцирование: diff <выражение> d <var>   ║
 ╠══════════════════════════════════════════════════╣
 ║ Примеры команд:                                  ║
