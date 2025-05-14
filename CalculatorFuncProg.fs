@@ -1,23 +1,26 @@
 open System
 open System.Collections.Generic
 
-/// Описывает возможные выражения
 type Expr =
-    | Var of string           // Переменная
-    | Const of float          // Константа
-    | Add of Expr * Expr      // Сложение
-    | Sub of Expr * Expr      // Вычитание
-    | Mul of Expr * Expr      // Умножение
-    | Div of Expr * Expr      // Деление
-    | Sin of Expr             // sin(...)
-    | Cos of Expr             // cos(...)
-    | Pow of Expr * Expr      // Возведение в степень
-    | Exp of Expr             // Экспонента
-    | Ln of Expr              // Натуральный логарифм
-    | Tan of Expr             // Тангенс
-    | Cot of Expr             // Котангенс
+    | Var of string
+    | Const of float
+    | Add of Expr * Expr
+    | Sub of Expr * Expr
+    | Mul of Expr * Expr
+    | Div of Expr * Expr
+    | Sin of Expr
+    | Cos of Expr
+    | Tan of Expr
+    | Cot of Expr
+    | Pow of Expr * Expr
+    | Exp of Expr
+    | Ln of Expr
+    | LogBase of Expr * Expr
+    | Lg of Expr
+    | ArcSin of Expr
+    | ArcCos of Expr
+    | ArcTan of Expr
 
-/// Функция для вычисления значения выражения
 let rec evaluate (expr: Expr) (vars: IDictionary<string, float>) : float =
     match expr with
     | Var x -> vars.[x]
@@ -29,12 +32,16 @@ let rec evaluate (expr: Expr) (vars: IDictionary<string, float>) : float =
     | Sin e -> Math.Sin(evaluate e vars)
     | Cos e -> Math.Cos(evaluate e vars)
     | Tan e -> Math.Tan(evaluate e vars)
-    | Cot e -> 1.0 / Math.Tan(evaluate e vars) 
+    | Cot e -> 1.0 / Math.Tan(evaluate e vars)
     | Pow (a, b) -> Math.Pow(evaluate a vars, evaluate b vars)
     | Exp e -> Math.Exp(evaluate e vars)
     | Ln e -> Math.Log(evaluate e vars)
+    | LogBase (b, a) -> Math.Log(evaluate a vars, evaluate b vars)
+    | Lg a -> Math.Log10(evaluate a vars)
+    | ArcSin e -> Math.Asin(evaluate e vars)
+    | ArcCos e -> Math.Acos(evaluate e vars)
+    | ArcTan e -> Math.Atan(evaluate e vars)
 
-/// Символьное дифференцирование
 let rec differentiate (expr: Expr) (varName: string) : Expr =
     match expr with
     | Const _ -> Const 0.0
@@ -57,8 +64,29 @@ let rec differentiate (expr: Expr) (varName: string) : Expr =
         )
     | Exp u -> Mul(Exp u, differentiate u varName)
     | Ln u -> Div(differentiate u varName, u)
+    | LogBase (b, a) ->
+        let da = differentiate a varName
+        let db = differentiate b varName
+        if db = Const 0.0 then
+            Div(da, Mul(a, Ln b))
+        else
+            Sub(
+                Div(da, Mul(a, Ln b)),
+                Div(Mul(a, Mul(Ln a, db)), Mul(Pow(Ln b, Const 2.0), b))
+            )
+    | Lg a ->
+        let da = differentiate a varName
+        Div(da, Mul(a, Ln (Const 10.0)))
+    | ArcSin e ->
+        let du = differentiate e varName
+        Div(du, Pow(Sub(Const 1.0, Pow(e, Const 2.0)), Const 0.5))
+    | ArcCos e ->
+        let du = differentiate e varName
+        Mul(Const -1.0, Div(du, Pow(Sub(Const 1.0, Pow(e, Const 2.0)), Const 0.5)))
+    | ArcTan e ->
+        let du = differentiate e varName
+        Div(du, Add(Const 1.0, Pow(e, Const 2.0)))
 
-/// Преобразование выражения в строку
 let rec exprToString (expr: Expr) : string =
     match expr with
     | Var x -> x
@@ -74,8 +102,12 @@ let rec exprToString (expr: Expr) : string =
     | Pow (a, b) -> sprintf "(%s ^ %s)" (exprToString a) (exprToString b)
     | Exp e -> sprintf "exp(%s)" (exprToString e)
     | Ln e -> sprintf "ln(%s)" (exprToString e)
+    | LogBase (b, a) -> sprintf "log(%s, %s)" (exprToString b) (exprToString a)
+    | Lg a -> sprintf "lg(%s)" (exprToString a)
+    | ArcSin e -> sprintf "arcsin(%s)" (exprToString e)
+    | ArcCos e -> sprintf "arccos(%s)" (exprToString e)
+    | ArcTan e -> sprintf "arctan(%s)" (exprToString e)
 
-/// Лексер
 let consumeTokens (chars: string list) : string list =
     let rec loop (acc: string list) (items: string list) =
         match items with
@@ -89,10 +121,15 @@ let consumeTokens (chars: string list) : string list =
         | "^" :: rest -> loop ("^" :: acc) rest
         | "s" :: "i" :: "n" :: "(" :: rest -> loop ("sin(" :: acc) rest
         | "c" :: "o" :: "s" :: "(" :: rest -> loop ("cos(" :: acc) rest
-        | "e" :: "x" :: "p" :: "(" :: rest -> loop ("exp(" :: acc) rest
         | "t" :: "a" :: "n" :: "(" :: rest -> loop ("tan(" :: acc) rest
         | "c" :: "o" :: "t" :: "(" :: rest -> loop ("cot(" :: acc) rest
+        | "e" :: "x" :: "p" :: "(" :: rest -> loop ("exp(" :: acc) rest
         | "l" :: "n" :: "(" :: rest -> loop ("ln(" :: acc) rest
+        | "l" :: "o" :: "g" :: "(" :: rest -> loop ("log(" :: acc) rest
+        | "l" :: "g" :: "(" :: rest -> loop ("lg(" :: acc) rest
+        | "a" :: "r" :: "c" :: "s" :: "i" :: "n" :: "(" :: rest -> loop ("arcsin(" :: acc) rest
+        | "a" :: "r" :: "c" :: "c" :: "o" :: "s" :: "(" :: rest -> loop ("arccos(" :: acc) rest
+        | "a" :: "r" :: "c" :: "t" :: "a" :: "n" :: "(" :: rest -> loop ("arctan(" :: acc) rest
         | x :: rest ->
            
             if x.Length > 0 && (Char.IsDigit(x.[0]) || x = ".") then
@@ -107,7 +144,6 @@ let consumeTokens (chars: string list) : string list =
                 loop (x :: acc) rest
     loop [] chars
 
-/// Парсер
 let parseExpr (input: string) =
     let chars = 
         input 
@@ -150,6 +186,32 @@ let parseExpr (input: string) =
                 let inside = tok.Substring(3)
                 let expr, t = parse (("(" + inside) :: tail)
                 Ln expr, t
+            | tok :: tail when tok.StartsWith("log(") ->
+                let inside = tok.Substring(4)
+                let baseExpr, tailAfterBase = parse (inside :: tail)
+                match tailAfterBase with
+                | "," :: t ->
+                    let argExpr, tAfterArg = parse t
+                    match tAfterArg with
+                    | ")" :: tRemain -> LogBase(baseExpr, argExpr), tRemain
+                    | _ -> failwith "Не закрыта скобка в log"
+                | _ -> failwith "Ожидается запятая в log(base, arg)"
+            | tok :: tail when tok.StartsWith("lg(") ->
+                let inside = tok.Substring(3)
+                let expr, t = parse (("(" + inside) :: tail)
+                Lg expr, t
+            | tok :: tail when tok.StartsWith("arcsin(") ->
+                let inside = tok.Substring(7)
+                let expr, t = parse (("(" + inside) :: tail)
+                ArcSin expr, t
+            | tok :: tail when tok.StartsWith("arccos(") ->
+                let inside = tok.Substring(7)
+                let expr, t = parse (("(" + inside) :: tail)
+                ArcCos expr, t
+            | tok :: tail when tok.StartsWith("arctan(") ->
+                let inside = tok.Substring(7)
+                let expr, t = parse (("(" + inside) :: tail)
+                ArcTan expr, t
             | tok :: tail ->
                 match Double.TryParse(tok) with
                 | true, num -> Const num, tail
@@ -190,7 +252,6 @@ let parseExpr (input: string) =
 [<EntryPoint>]
 let main _ =
     let vars = Dictionary<string, float>()
-    //  описание возможностей
     printfn "
 ╔══════════════════════════════════════════════════╗
 ║          Функциональный калькулятор 2.0          ║
@@ -198,15 +259,16 @@ let main _ =
 ║ Поддерживаемые операции:                         ║
 ║  • Арифметика: +, -, *, /, ^ (степень)           ║
 ║  • Функции: sin(), cos(), exp(), ln(),           ║
-║             tan(), cot()                         ║
+║             tan(), cot(), log(), lg(),           �
+║             arcsin(), arccos(), arctan()         ║
 ║  • Переменные: x = 5, y = 2^3 + sin(1)           ║
 ║  • Дифференцирование: diff <выражение> d <var>   ║
 ╠══════════════════════════════════════════════════╣
 ║ Примеры команд:                                  ║
 ║  > 2 + 3 * 5                                     ║
 ║  > x = 3.14                                      ║
-║  > diff x^2 + sin(x) d x                         ║
-║  > exp(2) + ln(e^3)                              ║
+║  > diff log(x,10) d x                            ║
+║  > arcsin(0.5)                                   ║
 ║  > exit                                          ║
 ╚══════════════════════════════════════════════════╝"
 
